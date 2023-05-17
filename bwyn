@@ -1,0 +1,90 @@
+#!/usr/bin/bash
+
+initVariables() {
+  to="HEAD"
+  verbose=0
+}
+
+usage() {
+  echo "bwyn --mvn=<mvn_goals> [--from=<from_ref>] [--to=<to_ref>] [--verbose]"
+  echo "           mvn_goals: goals Maven typiques (clean install...)"
+  echo "           from_ref:  référence Git qui limite la recherche des changements à partir de cette référence"
+  echo "                      si absent, recherche la référence Git du dernier build bwyn"
+  echo "                      si pas de dernier build, ne limite pas les projets à builder"
+  echo "           to_ref:    référence Git qui limite la recherche des changements jusqu'à cette référence"
+  echo "                      si absent, HEAD"
+  echo "     --help"
+}
+
+parseArguments() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --from=*)
+        from="${1#*=}"
+        ;;
+      --to=*)
+        to="${1#*=}"
+        ;;
+      --mvn=*)
+        mvnGoals="${1#*=}"
+        mvnGoals=$(echo "$mvnGoals" | cut -d '"' -f 2)
+        ;;
+      --verbose)
+        verbose=1
+        ;;
+      --help)
+        usage
+        exit 1
+        ;;
+      *)
+        echo "Invalid argument: $1"
+        exit 1
+    esac
+    shift
+  done
+}
+
+readLastBuildRef() {
+  if [[ -f ".bwyn/lastBuild" ]] && [[ -z "$from" ]]; then
+    [[ $verbose == 1 ]] && echo "Getting 'from ref' from last build"
+    from=$(cat ".bwyn/lastBuild")
+  fi
+}
+
+readProjectList() {
+  if [[ -n "$from" ]]; then
+    mvnProjectList="$(git diff \
+                        --name-status "$from" "$to" \
+                        | grep "src" \
+                        | sed 's/src.*//' \
+                        | sed 's/[AMDR][0-9]*//' \
+                        | uniq \
+                        | tr '\n' ',' \
+                        | tr -d '[:space:]')"
+
+    if [[ -n "$mvnProjectList" ]]; then
+      mvnGoals="$mvnGoals --pl $mvnProjectList -amd"
+    fi
+  fi
+}
+
+executeMvnCommand() {
+  [[ $verbose == 1 ]] && echo "Executing 'mvn $mvnGoals'"
+  # shellcheck disable=SC2086
+  mvn $mvnGoals
+}
+
+updateLastBuildRef() {
+  if ! [[ -d ".bwyn" ]]; then
+    mkdir ".bwyn"
+  fi
+
+  git rev-parse "$to" > ".bwyn/lastBuild"
+}
+
+initVariables
+parseArguments "$@"
+readLastBuildRef
+readProjectList
+executeMvnCommand
+updateLastBuildRef
