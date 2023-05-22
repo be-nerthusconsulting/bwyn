@@ -1,4 +1,6 @@
-#!/usr/bin/bash
+#!/bin/bash
+
+ERROR=1
 
 initVariables() {
   to="HEAD"
@@ -6,18 +8,19 @@ initVariables() {
 }
 
 usage() {
-  echo "bwyn --mvn=<mvn_goals> [--from=<from_ref>] [--to=<to_ref>] [--verbose]"
-  echo "           mvn_goals: goals Maven typiques (clean install...)"
-  echo "           from_ref:  référence Git qui limite la recherche des changements à partir de cette référence"
-  echo "                      si absent, recherche la référence Git du dernier build bwyn"
-  echo "                      si pas de dernier build, ne limite pas les projets à builder"
-  echo "           to_ref:    référence Git qui limite la recherche des changements jusqu'à cette référence"
-  echo "                      si absent, HEAD"
+  echo "bwyn [--from=<from_ref>] [--to=<to_ref>] [--verbose] <mvn_goals>"
+  echo "        from_ref:  référence Git qui limite la recherche des changements à partir de cette référence"
+  echo "                   si absent, recherche la référence Git du dernier build bwyn"
+  echo "                   si pas de dernier build, ne limite pas les projets à builder"
+  echo "        to_ref:    référence Git qui limite la recherche des changements jusqu'à cette référence"
+  echo "                   si absent, HEAD"
+  echo "        mvn_goals: goals Maven typiques (clean install...)"
   echo "     --help"
 }
 
 parseArguments() {
-  while [ $# -gt 0 ]; do
+  argsParsed=0
+  while [[ $# -gt 0 ]] && [[ $argsParsed -eq 0 ]]; do
     case "$1" in
       --from=*)
         from="${1#*=}"
@@ -25,23 +28,25 @@ parseArguments() {
       --to=*)
         to="${1#*=}"
         ;;
-      --mvn=*)
-        mvnGoals="${1#*=}"
-        mvnGoals=$(echo "$mvnGoals" | cut -d '"' -f 2)
-        ;;
       --verbose)
         verbose=1
         ;;
       --help)
         usage
-        exit 1
+        exit $ERROR
         ;;
       *)
-        echo "Invalid argument: $1"
-        exit 1
+        mvnGoals=$*
+        argsParsed=1
     esac
     shift
   done
+
+  if [[ $argsParsed -eq 0 ]]; then
+    echo "No maven goals provided!"
+    usage
+    exit $ERROR
+  fi
 }
 
 readLastBuildRef() {
