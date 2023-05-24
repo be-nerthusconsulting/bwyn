@@ -13,11 +13,6 @@ dateTime() {
   date "+%Y-%m-%d %T"
 }
 
-fileTimestamp() {
-  local file=$1
-  date -r "$file" +%s
-}
-
 log() {
   local message=$1
   echo "[$(dateTime)] $message"
@@ -34,6 +29,7 @@ logTestEnvironment() {
   echo ""
 }
 
+
 SOURCE_DIRECTORY="$(absoluteDirectoryPath "${BASH_SOURCE[0]}")/../.."
 TEST_DIRECTORY="$SOURCE_DIRECTORY/test"
 TEST_SCRIPTS_DIRECTORY="$TEST_DIRECTORY/scripts"
@@ -43,10 +39,12 @@ TEST_LOG="$TEST_RUN_DIRECTORY/bwyn_test-$(timestamp).log"
 
 BWYN="$SOURCE_DIRECTORY/main/scripts/bwyn"
 
-logTestEnvironment >> "$TEST_LOG"
+oneTimeSetUp() {
+  logTestEnvironment >> "$TEST_LOG"
 
-mkdir "$TEST_RUN_DIRECTORY" &> /dev/null
-touch "$TEST_LOG" &> /dev/null
+  mkdir "$TEST_RUN_DIRECTORY" &> /dev/null
+  touch "$TEST_LOG" &> /dev/null
+}
 
 copySampleProject() {
   local targetDirectory="$1"
@@ -68,7 +66,8 @@ compileProject() {
 }
 
 workInSampleProject() {
-  local tempDirectory=$(mktemp -d)
+  local tempDirectory
+  tempDirectory=$(mktemp -d)
   cd "$tempDirectory" || exit
 
   {
@@ -78,6 +77,12 @@ workInSampleProject() {
   } >> "$TEST_LOG"
 
   echo "$tempDirectory"
+}
+
+setUp() {
+  set -o pipefail
+
+  WORK_DIRECTORY=$(workInSampleProject)
 }
 
 backToInitialDirectory() {
@@ -92,32 +97,33 @@ cleanUpTempDirectory() {
   echo ""
 }
 
-afterEach() {
+tearDown() {
   backToInitialDirectory >> "$TEST_LOG"
   cleanUpTempDirectory >> "$TEST_LOG"
   set +o pipefail
   echo ""
 }
 
+fileTimestamp() {
+  local file=$1
+  date -r "$file" +%s
+}
+
+extractFilesLastModificationTimestamps() {
+  find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;
+}
+
 testInvalidUsage_whenNoMavenGoalsProvided_thenExitCodeShouldBeOne() {
-  set -o pipefail
-
-  WORK_DIRECTORY=$(workInSampleProject)
   cd "$WORK_DIRECTORY" || exit
-  trap afterEach RETURN
 
-  $BWYN --from=HEAD^ --to=HEAD --verbose
+  $BWYN --from=HEAD --to=HEAD --verbose
   local exitCode=$?
 
   assertEquals 1 $exitCode
 }
 
 testUnchanged_whenNothingChanged_thenExitCodeShouldBeZero() {
-  set -o pipefail
-
-  WORK_DIRECTORY=$(workInSampleProject)
   cd "$WORK_DIRECTORY" || exit
-  trap afterEach RETURN
 
   $BWYN --from=HEAD --to=HEAD clean compile
   local exitCode=$?
@@ -126,18 +132,61 @@ testUnchanged_whenNothingChanged_thenExitCodeShouldBeZero() {
 }
 
 testUnchanged_whenNothingChanged_thenCompiledFilesUnchanged() {
-  set -o pipefail
-
-  WORK_DIRECTORY=$(workInSampleProject)
   cd "$WORK_DIRECTORY" || exit
-  trap afterEach RETURN
 
-  local beforeClassFilesTimestamps=$(find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;)
+  local beforeClassFilesTimestamps
+  beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
 
   $BWYN --from=HEAD --to=HEAD clean compile
-  local afterClassFilesTimestamps=$(find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;)
+  local afterClassFilesTimestamps
+  afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
 
   assertEquals "$beforeClassFilesTimestamps" "$afterClassFilesTimestamps"
+}
+
+testChanged_whenNonDependencyModuleChanged_thenOnlyThatModuleCompiled() {
+  cd "$WORK_DIRECTORY" || exit
+
+  cp ModifiedClassC module-c/src/main/java/ClassC.java
+  git commit -am "Modified non dependency module"
+
+  local beforeClassFilesTimestamps
+  beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  $BWYN --from=HEAD^ --to=HEAD clean compile
+  local afterClassFilesTimestamps
+  afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  local diff
+  diff=$(comm -13 <(echo "$beforeClassFilesTimestamps" | sort) <(echo "$afterClassFilesTimestamps" | sort))
+  local diffCount
+  diffCount=$(echo "$diff" | wc -l | xargs)
+
+  assertEquals 1 "$diffCount"
+  assertContains "$diff" "ClassC"
+}
+
+testChanged_whenDependencyModuleChanged_thenAlsoDependentModuleCompiled() {
+  cd "$WORK_DIRECTORY" || exit
+
+  cp ModifiedClassA module-a/src/main/java/ClassA.java
+  git commit -am "Modified dependency module"
+
+  local beforeClassFilesTimestamps
+  beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  $BWYN --from=HEAD^ --to=HEAD clean compile
+  local afterClassFilesTimestamps
+  afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  local diff
+  diff=$(comm -13 <(echo "$beforeClassFilesTimestamps" | sort) <(echo "$afterClassFilesTimestamps" | sort))
+  local diffCount
+  diffCount=$(echo "$diff" | wc -l | xargs)
+
+  assertEquals 2 "$diffCount"
+  assertContains "$diff" "ClassA"
+  assertContains "$diff" "ClassB"
 }
 
 . shunit2 | tee -a "$TEST_LOG"
