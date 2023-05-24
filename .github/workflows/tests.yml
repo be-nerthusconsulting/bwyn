@@ -1,0 +1,12 @@
+name: Run BWYN tests
+on: [push]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: tests
+        uses: sudo-bot/action-shunit2@latest
+        with:
+          cli: "./src/test/scripts/bwyn_test"
