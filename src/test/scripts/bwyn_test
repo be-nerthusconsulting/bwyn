@@ -110,7 +110,7 @@ fileTimestamp() {
 }
 
 extractFilesLastModificationTimestamps() {
-  find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;
+  find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \; | sort
 }
 
 testInvalidUsage_whenNoMavenGoalsProvided_thenExitCodeShouldBeOne() {
@@ -137,7 +137,7 @@ testUnchanged_whenNothingChanged_thenCompiledFilesUnchanged() {
   local beforeClassFilesTimestamps
   beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
 
-  $BWYN --from=HEAD --to=HEAD clean compile
+  $BWYN --from=HEAD --to=HEAD --verbose clean compile
   local afterClassFilesTimestamps
   afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
 
@@ -158,7 +158,7 @@ testChanged_whenNonDependencyModuleChanged_thenOnlyThatModuleCompiled() {
   afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
 
   local diff
-  diff=$(comm -13 <(echo "$beforeClassFilesTimestamps" | sort) <(echo "$afterClassFilesTimestamps" | sort))
+  diff=$(comm -13 <(echo "$beforeClassFilesTimestamps") <(echo "$afterClassFilesTimestamps"))
   local diffCount
   diffCount=$(echo "$diff" | wc -l | xargs)
 
@@ -171,6 +171,29 @@ testChanged_whenDependencyModuleChanged_thenAlsoDependentModuleCompiled() {
 
   cp ModifiedClassA module-a/src/main/java/ClassA.java
   git commit -am "Modified dependency module"
+
+  local beforeClassFilesTimestamps
+  beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  $BWYN --from=HEAD^ --to=HEAD clean compile
+  local afterClassFilesTimestamps
+  afterClassFilesTimestamps=$(extractFilesLastModificationTimestamps)
+
+  local diff
+  diff=$(comm -13 <(echo "$beforeClassFilesTimestamps") <(echo "$afterClassFilesTimestamps"))
+  local diffCount
+  diffCount=$(echo "$diff" | wc -l | xargs)
+
+  assertEquals 2 "$diffCount"
+  assertContains "$diff" "ClassA"
+  assertContains "$diff" "ClassB"
+}
+
+testChanged_whenDependencyModulePomChanged_thenAlsoDependentModuleCompiled() {
+  cd "$WORK_DIRECTORY" || exit
+
+  cp ModifiedPom module-a/pom.xml
+  git commit -am "Modified dependency module POM"
 
   local beforeClassFilesTimestamps
   beforeClassFilesTimestamps=$(extractFilesLastModificationTimestamps)

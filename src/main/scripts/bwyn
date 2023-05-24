@@ -3,8 +3,8 @@
 ERROR=1
 
 initVariables() {
-  to="HEAD"
-  verbose=0
+  TO="HEAD"
+  VERBOSE=0
 }
 
 usage() {
@@ -27,23 +27,23 @@ misusage() {
 }
 
 parseArguments() {
-  argsParsed=0
+  local argsParsed=0
   while [[ $# -gt 0 ]] && [[ $argsParsed -eq 0 ]]; do
     case "$1" in
       --from=*)
-        from="${1#*=}"
+        FROM="${1#*=}"
         ;;
       --to=*)
-        to="${1#*=}"
+        TO="${1#*=}"
         ;;
       --verbose)
-        verbose=1
+        VERBOSE=1
         ;;
       --help)
         misusage
         ;;
       *)
-        mvnGoals=$*
+        MVN_GOALS=$*
         argsParsed=1
     esac
     shift
@@ -56,49 +56,62 @@ parseArguments() {
 }
 
 readLastBuildRef() {
-  if [[ -f ".bwyn/lastBuild" ]] && [[ -z "$from" ]]; then
-    [[ $verbose == 1 ]] && echo "Getting 'from ref' from last build"
-    from=$(cat ".bwyn/lastBuild")
+  if [[ -f ".bwyn/lastBuild" ]] && [[ -z "$FROM" ]]; then
+    [[ $VERBOSE == 1 ]] && echo "Getting 'from ref' from last build"
+    FROM=$(cat ".bwyn/lastBuild")
   fi
 }
 
+readSourceModifiedModules() {
+  git diff --name-status "$FROM" "$TO" | grep "src" | sed 's/src.*//' | sed 's/[AMDR][0-9]*//' | uniq | tr '\n' ',' | tr -d '[:space:]'
+}
+
+readPomModifiedModules() {
+  git diff --name-status "$FROM" "$TO" | grep "pom.xml" | sed 's/pom\.xml//' | sed 's/[AMDR][0-9]*//' | uniq | tr '\n' ',' | tr -d '[:space:]'
+}
+
 readProjectList() {
-  if [[ -n "$from" ]]; then
-    mvnProjectList="$(git diff \
-                        --name-status "$from" "$to" \
-                        | grep "src" \
-                        | sed 's/src.*//' \
-                        | sed 's/[AMDR][0-9]*//' \
-                        | uniq \
-                        | tr '\n' ',' \
-                        | tr -d '[:space:]')"
+  if [[ -n "$FROM" ]]; then
+    local sourceModifiedModules
+    sourceModifiedModules=$(readSourceModifiedModules)
+    local pomModifiedModules
+    pomModifiedModules=$(readPomModifiedModules)
+
+    local mvnProjectList
+    if [[ -n "$sourceModifiedModules" ]]; then
+      mvnProjectList="$sourceModifiedModules"
+    fi
+
+    if [[ -n "$pomModifiedModules" ]]; then
+      mvnProjectList="$mvnProjectList$pomModifiedModules"
+    fi
 
     if [[ -z "$mvnProjectList" ]]; then
       echo "No changes found, not building"
       exit 0
     else
-      mvnGoals="$mvnGoals --pl $mvnProjectList -amd"
+      MVN_GOALS="$MVN_GOALS --pl $mvnProjectList -amd"
     fi
   fi
 }
 
 executeMvnCommand() {
-  [[ $verbose == 1 ]] && echo "Executing 'mvn $mvnGoals'"
+  [[ $VERBOSE == 1 ]] && echo "Executing 'mvn $MVN_GOALS'"
 
   # shellcheck disable=SC2086
-  mvn $mvnGoals
+  mvn $MVN_GOALS
 }
 
 updateLastBuildRef() {
-  [[ $verbose == 1 ]] && echo "Updating last build git ref"
+  [[ $VERBOSE == 1 ]] && echo "Updating last build git ref"
 
   if ! [[ -d ".bwyn" ]]; then
-    [[ $verbose == 1 ]] && echo "Creating '.bwyn' directory"
+    [[ $VERBOSE == 1 ]] && echo "Creating '.bwyn' directory"
 
     mkdir ".bwyn"
   fi
 
-  git rev-parse "$to" > ".bwyn/lastBuild"
+  git rev-parse "$TO" > ".bwyn/lastBuild"
 }
 
 initVariables
