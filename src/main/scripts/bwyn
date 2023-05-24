@@ -10,15 +10,20 @@ initVariables() {
 usage() {
   echo "bwyn [--from=<from_ref>] [--to=<to_ref>] [--verbose] <mvn_goals>"
   echo "       Executes <mvn_goals> on Maven modules impacted between <from_ref> and <to_ref>"
-  echo "       --from=<from_ref>:  git ref from which to look for Maven modules having been modified"
-  echo "                           when not given, last build git ref in .bwyn/lastBuild file is used"
-  echo "                           when no last build information found, doesn't limit projects list (even when --to option is given)"
-  echo "       --to=<to_ref>:      git ref upto which to look for Maven modules having been modified"
-  echo "                           when not given, HEAD is used"
-  echo "       --verbose           whether to print out logs or not"
-  echo "       <mvn_goals>:        typical Maven goals (clean package...)"
+  echo "       --from=<from_ref>    git ref from which to look for Maven modules having been modified"
+  echo "                            when not given, last build git ref in .bwyn/lastBuild file is used"
+  echo "                            when no last build information found, doesn't limit projects list (even when --to option is given)"
+  echo "       --to=<to_ref>        git ref upto which to look for Maven modules having been modified"
+  echo "                            when not given, HEAD is used"
+  echo "       --verbose            whether to print out logs or not"
+  echo "       <mvn_goals>          typical Maven goals (clean package...)"
   echo "     --help"
   echo "       Shows bwyn usage"
+}
+
+misusage() {
+  usage
+  exit $ERROR
 }
 
 parseArguments() {
@@ -35,8 +40,7 @@ parseArguments() {
         verbose=1
         ;;
       --help)
-        usage
-        exit $ERROR
+        misusage
         ;;
       *)
         mvnGoals=$*
@@ -47,8 +51,7 @@ parseArguments() {
 
   if [[ $argsParsed -eq 0 ]]; then
     echo "No maven goals provided!"
-    usage
-    exit $ERROR
+    misusage
   fi
 }
 

@@ -1,0 +1,115 @@
+#!/bin/bash
+
+fullPath() {
+  echo "$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
+}
+
+timestamp() {
+  date +%s
+}
+
+dateTime() {
+  date "+%Y-%m-%d %T"
+}
+
+log() {
+  message=$1
+  echo "[$(dateTime)] $message"
+}
+
+logTestEnvironment() {
+  log "Test environment:"
+  log "* SOURCE_DIRECTORY=$SOURCE_DIRECTORY"
+  log "* TEST_DIRECTORY=$TEST_DIRECTORY"
+  log "* TEST_SCRIPTS_DIRECTORY=$TEST_SCRIPTS_DIRECTORY"
+  log "* TEST_RESOURCES_DIRECTORY=$TEST_RESOURCES_DIRECTORY"
+  log "* TEST_RUN_DIRECTORY=$TEST_RUN_DIRECTORY"
+  log "* TEST_LOG=$TEST_LOG"
+  echo ""
+}
+
+SOURCE_DIRECTORY=$(fullPath "../..")
+TEST_DIRECTORY="$SOURCE_DIRECTORY/test"
+TEST_SCRIPTS_DIRECTORY="$TEST_DIRECTORY/scripts"
+TEST_RESOURCES_DIRECTORY="$TEST_DIRECTORY/resources"
+TEST_RUN_DIRECTORY="$TEST_DIRECTORY/run"
+TEST_LOG="$TEST_RUN_DIRECTORY/bwyn_test-$(timestamp).log"
+
+BWYN="$SOURCE_DIRECTORY/main/scripts/bwyn"
+
+logTestEnvironment >> "$TEST_LOG"
+
+mkdir "$TEST_RUN_DIRECTORY" &> /dev/null
+touch "$TEST_LOG" &> /dev/null
+
+copySampleProject() {
+  targetDirectory="$1"
+  log "Copy sample project into '$targetDirectory'"
+  cp -R "$TEST_RESOURCES_DIRECTORY/sample/." "$targetDirectory"
+  echo ""
+}
+
+initGitRepository() {
+  log "Initialize Git repository"
+  git init
+  git add -A
+  git commit -m "Initial commit"
+  echo ""
+}
+
+workInSampleProject() {
+  tempDirectory=$(mktemp -d)
+  cd "$tempDirectory" || exit
+
+  copySampleProject "$tempDirectory" >> "$TEST_LOG"
+  initGitRepository >> "$TEST_LOG"
+
+  echo "$tempDirectory"
+}
+
+backToInitialDirectory() {
+  log "Going back to initial directory '$TEST_SCRIPTS_DIRECTORY'"
+  cd "$TEST_SCRIPTS_DIRECTORY" || exit
+  echo ""
+}
+
+cleanUpTempDirectory() {
+  log "Cleaning up temp directory '$WORK_DIRECTORY'"
+  rm -rf "$WORK_DIRECTORY"
+  echo ""
+}
+
+afterEach() {
+  backToInitialDirectory >> "$TEST_LOG"
+  cleanUpTempDirectory >> "$TEST_LOG"
+  set +o pipefail
+  echo ""
+}
+
+testInvalidUsage_whenNoMavenGoalsProvided_thenExitCodeShouldBeOne() {
+  set -o pipefail
+
+  WORK_DIRECTORY=$(workInSampleProject)
+  cd "$WORK_DIRECTORY" || exit
+  trap afterEach RETURN
+
+  $BWYN --from=HEAD^ --to=HEAD --verbose
+  local exitCode=$?
+
+  assertEquals 1 $exitCode
+}
+
+testUnchanged_whenNothingChanged_thenExitCodeShouldBeZero() {
+  set -o pipefail
+
+  WORK_DIRECTORY=$(workInSampleProject)
+  cd "$WORK_DIRECTORY" || exit
+  trap afterEach RETURN
+
+  $BWYN --from=HEAD --to=HEAD clean compile
+  local exitCode=$?
+
+  assertEquals 0 $exitCode
+}
+
+. shunit2 | tee -a "$TEST_LOG"
