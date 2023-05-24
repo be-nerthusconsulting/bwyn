@@ -1,7 +1,8 @@
 #!/bin/bash
 
-fullPath() {
-  echo "$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
+absoluteDirectoryPath() {
+  local path=$1
+  cd "$(dirname "$path")" && pwd -P
 }
 
 timestamp() {
@@ -12,8 +13,13 @@ dateTime() {
   date "+%Y-%m-%d %T"
 }
 
+fileTimestamp() {
+  local file=$1
+  date -r "$file" +%s
+}
+
 log() {
-  message=$1
+  local message=$1
   echo "[$(dateTime)] $message"
 }
 
@@ -28,7 +34,7 @@ logTestEnvironment() {
   echo ""
 }
 
-SOURCE_DIRECTORY=$(fullPath "../..")
+SOURCE_DIRECTORY="$(absoluteDirectoryPath "${BASH_SOURCE[0]}")/../.."
 TEST_DIRECTORY="$SOURCE_DIRECTORY/test"
 TEST_SCRIPTS_DIRECTORY="$TEST_DIRECTORY/scripts"
 TEST_RESOURCES_DIRECTORY="$TEST_DIRECTORY/resources"
@@ -43,7 +49,7 @@ mkdir "$TEST_RUN_DIRECTORY" &> /dev/null
 touch "$TEST_LOG" &> /dev/null
 
 copySampleProject() {
-  targetDirectory="$1"
+  local targetDirectory="$1"
   log "Copy sample project into '$targetDirectory'"
   cp -R "$TEST_RESOURCES_DIRECTORY/sample/." "$targetDirectory"
   echo ""
@@ -57,12 +63,19 @@ initGitRepository() {
   echo ""
 }
 
+compileProject() {
+  mvn clean compile
+}
+
 workInSampleProject() {
-  tempDirectory=$(mktemp -d)
+  local tempDirectory=$(mktemp -d)
   cd "$tempDirectory" || exit
 
-  copySampleProject "$tempDirectory" >> "$TEST_LOG"
-  initGitRepository >> "$TEST_LOG"
+  {
+    copySampleProject "$tempDirectory"; \
+    initGitRepository; \
+    compileProject;
+  } >> "$TEST_LOG"
 
   echo "$tempDirectory"
 }
@@ -110,6 +123,21 @@ testUnchanged_whenNothingChanged_thenExitCodeShouldBeZero() {
   local exitCode=$?
 
   assertEquals 0 $exitCode
+}
+
+testUnchanged_whenNothingChanged_thenCompiledFilesUnchanged() {
+  set -o pipefail
+
+  WORK_DIRECTORY=$(workInSampleProject)
+  cd "$WORK_DIRECTORY" || exit
+  trap afterEach RETURN
+
+  local beforeClassFilesTimestamps=$(find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;)
+
+  $BWYN --from=HEAD --to=HEAD clean compile
+  local afterClassFilesTimestamps=$(find . -name "*.class" -exec bash -c "date -r {} \"+{} %s\"" \;)
+
+  assertEquals "$beforeClassFilesTimestamps" "$afterClassFilesTimestamps"
 }
 
 . shunit2 | tee -a "$TEST_LOG"

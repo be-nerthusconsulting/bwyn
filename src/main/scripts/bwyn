@@ -73,7 +73,10 @@ readProjectList() {
                         | tr '\n' ',' \
                         | tr -d '[:space:]')"
 
-    if [[ -n "$mvnProjectList" ]]; then
+    if [[ -z "$mvnProjectList" ]]; then
+      echo "No changes found, not building"
+      exit 0
+    else
       mvnGoals="$mvnGoals --pl $mvnProjectList -amd"
     fi
   fi
