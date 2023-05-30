@@ -13,6 +13,11 @@ After that, it'll use that reference to determine impacted modules and build onl
 
 It's also possible to provide `--from=<git_ref>` and `--to=<git_ref>` options which allows you to control where `bwyn` is looking for changes. `--to` reference will then be saved in `.bwyn/lastBuild`.
 
-Download [the bwyn bash script][bwyn-script-link] and try it out!
+## Installation
+To install `bwyn`, follow these instructions:
+1. Download [the bwyn bash script][bwyn-script-link] (or copy the content to a local file)
+2. Add the directory containing the file to your `PATH`
+3. Open a terminal (Linux/Unix only, for Windows see WSL, MinGW or Cygwin) and `cd` into your project workspace
+4. Run `bwyn` as you would `mvn` (it only works for multi-modules project for now)
 
 [bwyn-script-link]: src/main/scripts/bwyn
